@@ -22,6 +22,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 from statsmodels.tsa.vector_ar.vecm import coint_johansen
 from utils import adf_test
+from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
+from statsmodels.tsa.arima.model import ARIMA
+from statsmodels.stats.diagnostic import acorr_ljungbox
+
 
 # Turn off warnings
 import warnings
@@ -154,3 +158,47 @@ plt.tight_layout()
 
 # %% [markdown]
 # ## ARIMA
+#
+# We will apply Box-Jenkins procedure to find p,d,q values for ARIMA(p, d, q). This procedure utilizes ACF and PACF to determine correspondingly right MA order and right AR model. We already have order of integration as we have shown that series are both non-stationary but their differences are stationary implying integration of order 1 - $I(1)$
+
+# %% [markdown]
+# Let's start with procedure for y2 series. We shown that it is $I(1)$ so we plot ACF and PACF for differenced series.
+
+# %%
+fig, axes = plt.subplots(1, 2, figsize = (10, 4))
+
+plot_acf(coint_df['dy2'], lags=20, ax=axes[0])
+axes[0].set_title("ACF")
+
+plot_pacf(coint_df['dy2'], lags=20, ax=axes[1]) 
+axes[1].set_title("PACF")
+
+plt.show()
+
+# %% [markdown]
+# We observe quite interesting behavior - ACF is decaying exponentially, which would be expected for simple AR(1) models. PACF on the other hand oscilates around 0, but also the greatest spike, which at the same time is significantly greater than other spikes is the first one (at lag 1). There is a possibility that the right model will be just AR(1) for differenced series, so ARIMA(1,1,0). Let's try this model
+
+# %%
+model = ARIMA(coint_df['y2'].values, order = (1,1,0))
+arima_110 = model.fit()
+print(arima_110.summary())
+
+# %%
+ljung_test = acorr_ljungbox(arima_110.resid, lags=[5, 10, 15, 20, 25], return_df=True)
+print(ljung_test)
+
+# %%
+fig, axes = plt.subplots(1, 2, figsize = (10, 4))
+
+plot_acf(arima_110.resid, lags=20, ax=axes[0]) 
+axes[0].set_title("ACF")
+
+plot_pacf(arima_110.resid, lags=20, ax=axes[1]) 
+axes[1].set_title("PACF")
+
+plt.show()
+
+# %% [markdown]
+# Model specification is correct. There is no autocorrelations in model residuals, and as usually we prefer simple models we could just take this one and move forward with the analysis as this model is basically the simplest one we can get. However, we can't really say that this model is certainly the best one without some comparison. It is therefore useful to study also different model specification and compare them on information criteria basis (lower is better).
+
+# %%
