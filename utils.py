@@ -3,6 +3,8 @@ import numpy as np
 import statsmodels.api as sm
 import statsmodels.stats.diagnostic as smd
 from statsmodels.tsa.api import VAR
+import matplotlib.pyplot as plt
+from sklearn.metrics import mean_absolute_error, mean_squared_error
 
 
 def adf_test(series, max_aug=10, version='n'):
@@ -89,3 +91,67 @@ def selct_var_order(data, max_lags=12):
             order_df.loc[i, criterion] = getattr(results[i], criterion)
 
     return order_df
+
+
+def plot_forecast_with_ci(start_date: str,
+                          df,
+                          actual_col: str,
+                          forecast_col: str,
+                          lower_col: str,
+                          upper_col: str,
+                          title: str,
+                          ylabel: str = 'Value'):
+    fig, ax = plt.subplots(figsize=(12, 6))
+
+    # Plot actual values
+    df.loc[start_date:, actual_col].plot(ax=ax, label='Actual', color='black', marker='.')
+
+    # Plot forecasted values
+    df.loc[start_date:, forecast_col].plot(ax=ax, label='Forecast', color='blue', linestyle='--')
+
+    # Plot confidence interval
+    ax.fill_between(df.loc[start_date:].index,
+                    df.loc[start_date:, lower_col],
+                    df.loc[start_date:, upper_col],
+                    color='red', alpha=0.2, label='95% CI')
+
+    ax.set_title(title)
+    ax.set_ylabel(ylabel)
+    ax.legend()
+    ax.grid(True, linestyle=':')
+    plt.tight_layout()
+    plt.show()
+
+
+# Calculate forecast accuracy measures
+def mape(actual, pred):
+    """Mean Absolute Percentage Error"""
+    return np.mean(np.abs((actual - pred) / actual)) * 100
+
+
+def amape(actual, pred):
+    """Adjusted/Symmetric Mean Absolute Percentage Error"""
+    return np.mean(np.abs((actual - pred) / ((actual + pred) / 2))) * 100
+
+
+def calculate_accuracy_measures(forecast_evaluation, variable):
+    # Calculate metrics for variable
+    first_variable_mae = mean_absolute_error(forecast_evaluation[f'{variable}'],
+                                             forecast_evaluation[f'{variable}_fore'])
+    first_variable_mse = mean_squared_error(forecast_evaluation[f'{variable}'],
+                                            forecast_evaluation[f'{variable}_fore'])
+    first_variable_rmse = np.sqrt(first_variable_mse)
+    first_variable_mape = mape(forecast_evaluation[f'{variable}'], forecast_evaluation[f'{variable}_fore'])
+    first_variable_amape = amape(forecast_evaluation[f'{variable}'],
+                                 forecast_evaluation[f'{variable}_fore'])
+    return first_variable_mae, first_variable_mse, first_variable_rmse, first_variable_mape, first_variable_amape
+
+
+def print_accuracy_measures(forecast_evaluation, lags, first_variable, second_variable):
+    # Create a DataFrame to display the results
+    metrics_df = pd.DataFrame({
+        f'{first_variable}': calculate_accuracy_measures(forecast_evaluation, first_variable),
+        f'{second_variable}': calculate_accuracy_measures(forecast_evaluation, second_variable),
+    }, index=['MAE', 'MSE', 'RMSE', 'MAPE (%)', 'AMAPE (%)'])
+    print(f"Forecast Accuracy Metrics for {lags} lags:")
+    print(metrics_df)
