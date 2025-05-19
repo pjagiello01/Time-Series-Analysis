@@ -3,8 +3,10 @@ import numpy as np
 import statsmodels.api as sm
 import statsmodels.stats.diagnostic as smd
 from statsmodels.tsa.api import VAR
+from statsmodels.tsa.arima.model import ARIMA
 import matplotlib.pyplot as plt
 from sklearn.metrics import mean_absolute_error, mean_squared_error
+from typing import Type
 
 
 def adf_test(series, max_aug=10, version='n'):
