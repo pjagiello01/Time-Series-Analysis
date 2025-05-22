@@ -3,8 +3,10 @@ import numpy as np
 import statsmodels.api as sm
 import statsmodels.stats.diagnostic as smd
 from statsmodels.tsa.api import VAR
+from statsmodels.tsa.arima.model import ARIMA
 import matplotlib.pyplot as plt
 from sklearn.metrics import mean_absolute_error, mean_squared_error
+from typing import Type
 
 
 def adf_test(series, max_aug=10, version='n'):
@@ -71,6 +73,22 @@ def adf_test(series, max_aug=10, version='n'):
                           'BG test (10 lags) (p-value)', 'BG test (15 lags) (p-value)']
 
     return results_df
+  
+  
+
+def get_forecast_df(n_steps: int,
+                    model: Type[ARIMA]):
+    forecast_results = model.get_forecast(steps=n_steps)
+    mean_forecast = forecast_results.predicted_mean
+    conf_intervals = forecast_results.conf_int()
+    forecast_df = pd.DataFrame({
+        "forecast": mean_forecast,
+        "lower ci": conf_intervals[:, 0],
+        "upper ci": conf_intervals[:, 1]
+    })
+
+    return forecast_df
+
 
 
 def selct_var_order(data, max_lags=12):
@@ -155,3 +173,4 @@ def print_accuracy_measures(forecast_evaluation, lags, first_variable, second_va
     }, index=['MAE', 'MSE', 'RMSE', 'MAPE (%)', 'AMAPE (%)'])
     print(f"Forecast Accuracy Metrics for {lags} lags:")
     print(metrics_df)
+
