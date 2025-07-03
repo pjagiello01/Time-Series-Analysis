@@ -77,14 +77,15 @@ def adf_test(series, max_aug=10, version='n'):
   
 
 def get_forecast_df(n_steps: int,
-                    model: Type[ARIMA]):
+                    model: Type[ARIMA],
+                    name: str):
     forecast_results = model.get_forecast(steps=n_steps)
     mean_forecast = forecast_results.predicted_mean
     conf_intervals = forecast_results.conf_int()
     forecast_df = pd.DataFrame({
-        "forecast": mean_forecast,
-        "lower ci": conf_intervals[:, 0],
-        "upper ci": conf_intervals[:, 1]
+        f"{name}_fore": mean_forecast,
+        f"{name}_lower": conf_intervals[:, 0],
+        f"{name}_upper": conf_intervals[:, 1]
     })
 
     return forecast_df
@@ -174,3 +175,12 @@ def print_accuracy_measures(forecast_evaluation, lags, first_variable, second_va
     print(f"Forecast Accuracy Metrics for {lags} lags:")
     print(metrics_df)
 
+
+def get_accuracy_measures(forecast_evaluation, lags, first_variable, second_variable):
+    # Create a DataFrame to display the results
+    metrics_df = pd.DataFrame({
+        f'{first_variable}': calculate_accuracy_measures(forecast_evaluation, first_variable),
+        f'{second_variable}': calculate_accuracy_measures(forecast_evaluation, second_variable),
+    }, index=['MAE', 'MSE', 'RMSE', 'MAPE (%)', 'AMAPE (%)'])
+    print(f"Forecast Accuracy Metrics for {lags} lags:")
+    return metrics_df

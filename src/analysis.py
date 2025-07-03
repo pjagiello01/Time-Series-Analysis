@@ -30,12 +30,15 @@
 # %%
 # Libraries
 
+import sys
+sys.path.append('../')
+
 import pandas as pd
 import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
 from statsmodels.tsa.vector_ar.vecm import coint_johansen
-from utils import *
+from src.utils import *
 from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
 from statsmodels.tsa.arima.model import ARIMA
 from statsmodels.tsa.api import VAR, VECM
@@ -48,6 +51,8 @@ from scipy.stats import norm
 # Turn off warnings
 import warnings
 warnings.filterwarnings('ignore')
+
+
 
 # %% [markdown]
 # ## Data
@@ -64,7 +69,7 @@ warnings.filterwarnings('ignore')
 
 # %%
 # Loading the data
-df = pd.read_csv('data/prices.csv')
+df = pd.read_csv('../data/prices.csv')
 
 # %%
 df.head()
@@ -104,7 +109,7 @@ sample_df.tail()
 # %% [markdown]
 # ### Visual analysis
 #
-# As we shown above we should expect difference between cointegrated series to fluctuate around some mean value. Starting from the top the behavior is clear for orange and ligth blue lines, so for y2 and y10 series.
+# As we shown above we should expect difference between cointegrated series to fluctuate around some mean value. Starting from the top the behavior is clear for orange and ligth blue lines, so for y2 and y10 series. But while testing for cointegration with Engle&Granger test showed that both series are cointegrated, the Johansen test showed us that there is perfect colinearity (?).
 
 # %%
 plt.figure(figsize=(12, 6))
@@ -145,7 +150,7 @@ plt.show()
 # %% [markdown]
 # #### Stationatity
 #
-# Stationarity is an important concept in time series analysis. Weak stationarity assumes constant mean, variance and autocovariance over time. For our case statoinarity needs to be assesed for cointegration testing (check whether both series are $I(1)$) and to determine d order of ARIMA.
+# Stationarity is an important concept in time series analysis. Weak stationarity assumes constant mean, variance and autocovariance over time. For our case stationarity needs to be assesed for cointegration testing (check whether both series are $I(1)$) and to determine integration order in ARIMA.
 #
 # ##### Testing for stationarity
 #
@@ -227,18 +232,24 @@ plt.show()
 adf_test(model_ols.resid, max_aug = 10)
 
 # %% [markdown]
-# Null hypothesis of ADF test is strongly rejected, thus we conclude that series y3 and y8 are cointegrated. From OLS estimates we get normalized cointegration vector. It is $[1, -44.16, -0.625]$, where $1$ is y3 coefficient, $44.16$ is constant and $-0.625$ is y8 coefficient:
+# Null hypothesis of ADF test is strongly rejected, thus we conclude that series y3 and y8 are cointegrated. From OLS estimates we get normalized cointegration vector. It is $[1, -44.16, -0.625]$, where $1$ is y3 coefficient, $-44.16$ is constant and $-0.625$ is y8 coefficient:
 # $$
 # y_{3_t} - 44.16 - 0.625 y_{8_t} = \epsilon_t \quad \epsilon_t \sim \mathcal{N}(0, \sigma^2)
 # $$
 
 # %% [markdown]
-# ### Johansen test
-#
-#  $ΔYt = ΠYt−1 + Γ1ΔYt−1 + Γ2ΔYt−2 + . . . + Γp−1ΔYt−(p−1) + εt$
+# ## VECM Model ##
 
 # %% [markdown]
-# We would like to run Johansen Cointegration tests. But because lag length can affect this test, we should first decide how many lags will be taken into consideration. Because we are dealing with financial asset prices first what comes to mind is 5 lags. But to make more informed decision we can employ information criteria.
+# ### Johansen test
+# Another way of testing for cointegration of two time series given both are I(1) is Johansen Test, it requires regular VAR to be respecified to VECM as shown below.
+#
+#  $ΔYt = ΠYt−p + Γ1ΔYt−1 + Γ2ΔYt−2 + . . . + Γp−1ΔYt−(p−1) + εt$
+#
+# where Π matrix can be interpreted as long-run coefficient matrix and Γ is coefficient matrix of lags of the dependent variable. At this point is worth nothing the similarity between this equation and ADF test for which we have first differenced term on left-hand side and lagged values and differences on the right side of the equation.
+
+# %% [markdown]
+# Because lag length can affect this Johansen test, we should first decide how many of them will be taken into consideration. Because we are dealing with financial asset prices first what comes to mind is 5 lags. But to make more informed decision we can employ information criteria.
 
 # %%
 model_var = VAR(coint_df[['y3', 'y8']], freq='D')
@@ -253,20 +264,24 @@ print(results.summary())
 selct_var_order(coint_df[['y3', 'y8']], max_lags=10)
 
 # %% [markdown]
-# Given that we are dealing with financial instruments data we will use 3 number of lags in our test. Also AIC and FPE usually favor bigger number of lags, BIC is usually on the lower side, but HQIC should be something in between.
+# Given that the decision here will be somewhat arbitrary we are choosing 3 number of lags to simplify the model.
 #
 
 # %% [markdown]
 # #### Performing Johansen test
 #
-# We are performing this test to verify if cointegrated vector exists for those two time series.
+# Distribution for two tests which we are going to run is non-standard and cirtical values depend on  We are performing this test to verify if cointegrated vector exists for those two time series. Following variables needs to be specified:
+# * k_ar_diff - number of lagged differences. Because we operate on lagged differences this number is k-1 where k is the number of lags in original VAR model.
+# * det_order - here we are assuming that mean of our cointegration process is equal to 0 (has no additional constant term), is different than 0 but constant or is trending. We are chosing second option.
+#
+# It also depends on number of variables and number of cointegrating vectors but first is indicated by the data and second is implied by tests.
 
 # %%
 # Perform Johansen test
-# K=4 in levels VAR -> k_ar_diff = K-1 = 3 lags in VECM differences
+# K=3 in levels VAR -> k_ar_diff = K-1 = 2 lags in VECM differences
 # ecdet = "const" -> det_order = 0 (constant in CE)
 
-johansen_result = coint_johansen(sample_df[['y3', 'y8']], det_order=0, k_ar_diff=3)
+johansen_result = coint_johansen(sample_df[['y3', 'y8']], det_order=0, k_ar_diff=2)
 
 print("Johansen Test Results:")
 print("Eigenvalues:")
@@ -304,22 +319,24 @@ for i in range(len(hypotheses_maxeig)):
         print("  Result: Cannot reject H0 at 5% significance level.")
 
 # %% [markdown]
-# In both cases for Trace and Max Eigenvalue tests we can see that H0 indicating that there is **no cointegrating vector can be rejected**. However, we fail to reject H0 that there is **one cointegrating vector** thus implying that we have exactly one cointegrating vector and series is cointegrated.
+# Trace Test - is a joint test which states that the number of cointegrating vectors is less than or equal r.
+# Max Eigenvalue Test - is based on testing each eigenvalue separately and null is that number of cointegrating vector is r.
+# In both cases for Trace and Max Eigenvalue tests we can see that H0 indicating that there is **no cointegrating vector can be rejected**. However, we **fail** to reject H0 that there is **one cointegrating vector** thus implying that we have exactly one cointegrating vector and series is cointegrated.
 #
 # ---
 
 # %% [markdown]
 # ## VECM model
 #
-# Following variables will be used in our VECM model
-# * Previously set number of lags = 4 so lag order in differences will be 3.
-# * Cointegration as already establish is of rank one
-# * Daily frequency = daily
-# * why ci exactly?
+# Following variables will be used in our VECM model:
+# * k_ar_diff as previously,
+# * cointegration as already establish is of rank one,
+# * freq =  d/daily,
+# * deterministic refers to constant term added to mean of our cointegration process.
 
 # %%
 # Estimate VECM
-vecm_model = VECM(coint_df[['y3', 'y8']], k_ar_diff=3, coint_rank=1, deterministic='ci', freq='D')
+vecm_model = VECM(coint_df[['y3', 'y8']], k_ar_diff=2, coint_rank=1, deterministic='ci', freq='D')
 vecm_results = vecm_model.fit()
 
 # %% [markdown]
@@ -361,7 +378,7 @@ print(f"{vecm_results.alpha} {vecm_results.beta[:, 0] / vecm_results.beta[0, 0]}
 #
 # Alphas ( 'adjustment parameters' )
 # * $\alpha_{11}$ - we see it being positive, and in this case we would expect negative sign, but coefficient is not statistically significant.
-# * $\alpha_{12}$ - is positive 2.5163 and statistically significant, meaning that correction mechanism works in expected direction. Variable should return to the long-term equilibrium - when it's above it should adjust downwards and below it adjust upwards.
+# * $\alpha_{12}$ - is positive 2.386 and statistically significant, meaning that correction mechanism works in expected direction. Variable should return to the long-term equilibrium - when it's above it should adjust downwards and below it adjust upwards.
 #
 #  Betas ( coingegrating vectors )
 # * $\beta_{11}$ - normalization applied thanks to decomposition of Π not being unique.
@@ -391,7 +408,7 @@ var_results = var_model.fit(4)
 # Calculate and plot impulse response functions
 irf = var_results.irf(160)  # 160 periods ahead
 # and hence interpretations may change depending on variable ordering.
-irf.plot(orth=True)
+irf.plot(orth=True);
 
 # %% [markdown]
 # **Interpretation**
@@ -588,7 +605,7 @@ plot_forecast_with_ci('2025-03-06',df_merged,'y8','y8_fore','y8_lower','y8_upper
 # In following section we will examine metrics for our out-of-sample period forecast errors.
 
 # %%
-print_accuracy_measures(df_merged.dropna(),4,'y3','y8')
+print_accuracy_measures(df_merged.dropna(),3,'y3','y8')
 
 # %% [markdown]
 # ---
@@ -612,7 +629,10 @@ axes[1].set_title("PACF")
 plt.show()
 
 # %% [markdown]
-# We observe quite interesting behavior - ACF is decaying exponentially, which would be expected for simple AR(1) models. PACF on the other hand oscilates around 0, but also the greatest spike, which at the same time is significantly greater than other spikes is the first one (at lag 1). There is a possibility that the right model will be just AR(1) for differenced series, so ARIMA(1,1,0). Let's try this model
+# We observe quite interesting behavior - ACF is decaying exponentially, which would be expected for pure AR models. PACF shows significant spikes at lag 1 and 2. Lags 3, 4 and maybe 6 are just out of confidence interval. Most likely we should choose AR(2) model, however we are going to check also 1, 3 and 4 orders. We will compare models using information criteria.
+
+# %% [markdown]
+# Let's start with ARIMA(1, 1, 0) 
 
 # %%
 model = ARIMA(coint_df['y3'].values, order = (1,1,0))
@@ -636,8 +656,100 @@ plt.show()
 
 # %% [markdown]
 # Model specification is correct. There is no autocorrelations in model residuals, and as usually we prefer simple models we could just take this one and move forward with the analysis as this model is basically the simplest one we can get. However, we can't really say that this model is certainly the best one without some comparison. It is therefore useful to study also different model specifications and compare them on information criteria basis (lower is better).
+
+# %% [markdown]
+# So let's now check ARIMA(2, 1, 0) and other specifications
+
+# %%
+model = ARIMA(coint_df['y3'].values, order = (2,1,0))
+arima_210 = model.fit()
+print(arima_210.summary())
+
+# %%
+ljung_test = acorr_ljungbox(arima_210.resid, lags=[5, 10, 15, 20, 25], return_df=True)
+print(ljung_test)
+
+# %%
+fig, axes = plt.subplots(1, 2, figsize = (10, 4))
+
+plot_acf(arima_210.resid, lags=20, ax=axes[0]) 
+axes[0].set_title("ACF")
+
+plot_pacf(arima_210.resid, lags=20, ax=axes[1]) 
+axes[1].set_title("PACF")
+
+plt.show()
+
+# %%
+model = ARIMA(coint_df['y3'].values, order = (3,1,0))
+arima_310 = model.fit()
+print(arima_310.summary())
+
+# %%
+ljung_test = acorr_ljungbox(arima_310.resid, lags=[5, 10, 15, 20, 25], return_df=True)
+print(ljung_test)
+
+# %%
+fig, axes = plt.subplots(1, 2, figsize = (10, 4))
+
+plot_acf(arima_310.resid, lags=20, ax=axes[0]) 
+axes[0].set_title("ACF")
+
+plot_pacf(arima_310.resid, lags=20, ax=axes[1]) 
+axes[1].set_title("PACF")
+
+plt.show()
+
+# %%
+model = ARIMA(coint_df['y3'].values, order = (4,1,0))
+arima_410 = model.fit()
+print(arima_410.summary())
+
+# %%
+ljung_test = acorr_ljungbox(arima_410.resid, lags=[5, 10, 15, 20, 25], return_df=True)
+print(ljung_test)
+
+# %%
+fig, axes = plt.subplots(1, 2, figsize = (10, 4))
+
+plot_acf(arima_410.resid, lags=20, ax=axes[0]) 
+axes[0].set_title("ACF")
+
+plot_pacf(arima_410.resid, lags=20, ax=axes[1]) 
+axes[1].set_title("PACF")
+
+plt.show()
+
+# %% [markdown]
+# We can see that all specifications are technically correct. So let's see which one is the baset by information criteria
+
+# %%
+models = [arima_110, arima_210, arima_310, arima_410]
+model_names = ["arima_110", "arima_210", "arima_310", "arima_410"]
+
+aic = []
+bic = []
+
+for model in models:
+    aic.append(model.aic)
+    bic.append(model.bic)
+
+# %%
+y3_arima_res = pd.DataFrame({
+    "AIC": aic,
+    "BIC": bic
+}, index=model_names)
+
+# %%
+y3_arima_res
+
+# %% [markdown]
+# Results are ambiguous. BIC suggests that the best model is ARIMA(2, 1, 0) and AIC suggests model ARIMA(4, 1, 0). We will choose simpler model, in this case ARIMA(2, 1, 0) for further anaylysis.
 #
 # ---
+
+# %% [markdown]
+# Let's continue wuth analysis. We've already chosen model for y3 series. Now we have to do the same for y8 series
 
 # %%
 fig, axes = plt.subplots(1, 2, figsize = (10, 4))
@@ -650,10 +762,114 @@ axes[1].set_title("PACF")
 
 plt.show()
 
+# %% [markdown]
+# ACF and PACF look quite similar to those obtained for y3 series. But here we will check orders 1, 2, 4 and 6
+
 # %%
 model = ARIMA(coint_df['y8'].values, order = (1,1,0))
 arima_110_2 = model.fit()
 print(arima_110_2.summary())
+
+# %%
+ljung_test = acorr_ljungbox(arima_110_2.resid, lags=[5, 10, 15, 20, 25], return_df=True)
+print(ljung_test)
+
+# %%
+fig, axes = plt.subplots(1, 2, figsize = (10, 4))
+
+plot_acf(arima_110_2.resid, lags=20, ax=axes[0]) 
+axes[0].set_title("ACF")
+
+plot_pacf(arima_110_2.resid, lags=20, ax=axes[1]) 
+axes[1].set_title("PACF")
+
+plt.show()
+
+# %%
+model = ARIMA(coint_df['y8'].values, order = (2,1,0))
+arima_210_2 = model.fit()
+print(arima_210_2.summary())
+
+# %%
+ljung_test = acorr_ljungbox(arima_210_2.resid, lags=[5, 10, 15, 20, 25], return_df=True)
+print(ljung_test)
+
+# %%
+fig, axes = plt.subplots(1, 2, figsize = (10, 4))
+
+plot_acf(arima_210_2.resid, lags=20, ax=axes[0]) 
+axes[0].set_title("ACF")
+
+plot_pacf(arima_210_2.resid, lags=20, ax=axes[1]) 
+axes[1].set_title("PACF")
+
+plt.show()
+
+# %%
+model = ARIMA(coint_df['y8'].values, order = (4,1,0))
+arima_410_2 = model.fit()
+print(arima_410_2.summary())
+
+# %%
+ljung_test = acorr_ljungbox(arima_410_2.resid, lags=[5, 10, 15, 20, 25], return_df=True)
+print(ljung_test)
+
+# %%
+fig, axes = plt.subplots(1, 2, figsize = (10, 4))
+
+plot_acf(arima_410_2.resid, lags=20, ax=axes[0]) 
+axes[0].set_title("ACF")
+
+plot_pacf(arima_410_2.resid, lags=20, ax=axes[1]) 
+axes[1].set_title("PACF")
+
+plt.show()
+
+# %%
+model = ARIMA(coint_df['y8'].values, order = (6,1,0))
+arima_610_2 = model.fit()
+print(arima_610_2.summary())
+
+# %%
+ljung_test = acorr_ljungbox(arima_610_2.resid, lags=[5, 10, 15, 20, 25], return_df=True)
+print(ljung_test)
+
+# %%
+fig, axes = plt.subplots(1, 2, figsize = (10, 4))
+
+plot_acf(arima_610_2.resid, lags=20, ax=axes[0]) 
+axes[0].set_title("ACF")
+
+plot_pacf(arima_610_2.resid, lags=20, ax=axes[1]) 
+axes[1].set_title("PACF")
+
+plt.show()
+
+# %% [markdown]
+# Again all studied specifications are technically correct
+
+# %%
+models = [arima_110_2, arima_210_2, arima_410_2, arima_610_2]
+model_names = ["arima_110", "arima_210", "arima_410", "arima_610"]
+
+aic = []
+bic = []
+
+for model in models:
+    aic.append(model.aic)
+    bic.append(model.bic)
+
+# %%
+y8_arima_res = pd.DataFrame({
+    "AIC": aic,
+    "BIC": bic
+}, index=model_names)
+
+# %%
+y8_arima_res
+
+# %% [markdown]
+# It is the same case as previously for y3 series. Again we choose ARIMA(2, 1, 0)
 
 # %% [markdown]
 # ---
@@ -665,10 +881,10 @@ print(arima_110_2.summary())
 sample_df.tail()
 
 # %%
-y3_forecast_df = get_forecast_df(n_steps=25, model=arima_110)
+y3_forecast_df = get_forecast_df(n_steps=25, model=arima_210, name="y3")
 y3_forecast_df.index = df.tail(25).index
 
-y8_forecast_df = get_forecast_df(n_steps=25, model=arima_110_2)
+y8_forecast_df = get_forecast_df(n_steps=25, model=arima_210_2, name="y8")
 y8_forecast_df.index = df.tail(25).index
 
 # %%
@@ -676,39 +892,75 @@ y3_df = df[['y3']].join(y3_forecast_df)
 y8_df = df[['y8']].join(y8_forecast_df)
 
 # %%
-plot_forecast_with_ci('2025-03-03', y3_df, 'y3', 'forecast', 'lower ci', 'upper ci', 'y3 Forecast')
+plot_forecast_with_ci('2025-03-03', y3_df, 'y3', 'y3_fore', 'y3_lower', 'y3_upper', 'y3 Forecast')
 
 # %%
-# Forecast evaluation
-mape_y3 = mape(df['y3'][-25:], y3_forecast_df['forecast'])
-amape_y3 = amape(df['y3'][-25:], y3_forecast_df['forecast'])
-mse_y3 = mean_squared_error(df['y3'][-25:], y3_forecast_df['forecast'])
-mae_y3 = mean_absolute_error(df['y3'][-25:], y3_forecast_df['forecast'])
-rmse_y3 = np.sqrt(mse_y3)
+plot_forecast_with_ci('2025-03-03', y8_df, 'y8', 'y8_fore', 'y8_lower', 'y8_upper', 'y8 Forecast')
 
 # %%
-print(f"""mape: {mape_y3}\n
-amape: {amape_y3}\n
-mse: {mse_y3}\n
-rmse: {rmse_y3}\n
-mae: {mae_y3}""")
+arima_merged_fcst = df[['y3', 'y8']].merge(pd.concat([y3_forecast_df, y8_forecast_df], axis=1), left_index=True, right_index=True, how='left')
 
 # %%
-plot_forecast_with_ci('2025-03-03', y8_df, 'y8', 'forecast', 'lower ci', 'upper ci', 'y8 Forecast')
+print_accuracy_measures(arima_merged_fcst.dropna(), 3, 'y3', 'y8')
+
+# %% [markdown]
+# ### Forecasting Competition
+
+# %% [markdown]
+# Now, as we performed forecasting both for chosen ARIMA models and VECM models we can see which model performs the best. Moreover we can compare obtained point predictions with naive forecast to see whether we managed to improve simple guessing stategy. Note that we did not reestimate our models. Meaning that we simply created 25 periods ahead forecasts. That is why forecasts lines look quite flat. Obviously we use mean reverting processes so without any adjustments for observed values in these 25 periods our proccesses just revert to their means.
+#
+# Obvious comparison would be then the naive forecast which for each of the 25 time periods takes the same value equal to the last observed value before forecasting period
 
 # %%
-# Forecast evaluation
-mape_y8 = mape(df['y8'][-25:], y8_forecast_df['forecast'])
-amape_y8 = amape(df['y8'][-25:], y8_forecast_df['forecast'])
-mse_y8 = mean_squared_error(df['y8'][-25:], y8_forecast_df['forecast'])
-mae_y8 = mean_absolute_error(df['y8'][-25:], y8_forecast_df['forecast'])
-rmse_y8 = np.sqrt(mse_y8)
-
-print(f"""mape: {mape_y8}\n
-amape: {amape_y8}\n
-mse: {mse_y8}\n
-rmse: {rmse_y8}\n
-mae: {mae_y8}""")
+forecast_dates = df[-25:].index
 
 
+# %%
+naive_fcst = pd.DataFrame({
+    "y3_fore": [sample_df["y3"].iloc[-1]]*25,
+    "y8_fore": [sample_df["y8"].iloc[-1]]*25
+},
+index=forecast_dates)
 
+
+# %%
+naive_fcst_df = df[['y3', 'y8']].merge(naive_fcst, left_index=True, right_index=True, how='left')
+
+# %%
+print_accuracy_measures(naive_fcst_df.dropna(),3,'y3','y8')
+
+# %%
+plt.figure(figsize = (12, 6))
+plt.plot(df["y3"].iloc[-80:])
+plt.plot(naive_fcst_df["y3_fore"])
+plt.grid(alpha=0.3)
+plt.title("Forecast y3 naive")
+plt.show()
+
+# %%
+plt.figure(figsize = (12, 6))
+plt.plot(df["y8"].iloc[-80:])
+plt.plot(naive_fcst_df["y8_fore"])
+plt.title("Forecast y8 naive")
+plt.grid(alpha = 0.3)
+plt.show()
+
+# %% [markdown]
+# Above we show naive forecast results. Let's now compare all forecasts
+
+# %%
+arima_metrics = get_accuracy_measures(arima_merged_fcst.dropna(), 3, "y3", "y8")
+vecm_metrics = get_accuracy_measures(df_merged.dropna(), 3, "y3", "y8")
+naive_metrics = get_accuracy_measures(naive_fcst_df.dropna(), 3, "y3", "y8")
+
+arima_metrics.columns = pd.MultiIndex.from_product([['ARIMA'], arima_metrics.columns])
+vecm_metrics.columns = pd.MultiIndex.from_product([['VECM'], vecm_metrics.columns])
+naive_metrics.columns = pd.MultiIndex.from_product([['Naive'], naive_metrics.columns])
+
+combined_metrics = pd.concat([arima_metrics, vecm_metrics, naive_metrics], axis=1)
+
+# %%
+combined_metrics
+
+# %% [markdown]
+# As can be seen, overall best model is VECM. We also managed to improve results obtained with naive forecast
